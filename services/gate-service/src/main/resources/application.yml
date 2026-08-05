@@ -1,0 +1,31 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: gate-service
+  kafka:
+    bootstrap-servers: localhost:19092
+    consumer:
+      group-id: gate-check-workers
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+
+# Gate Check Configuration
+gate:
+  rules:
+    max-critical-issues: 0
+    max-warnings: 5
+    max-diff-size: 2000
+    require-tests-for-new-files: true
+    block-on-security-issues: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics

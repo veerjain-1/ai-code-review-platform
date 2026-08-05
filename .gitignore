@@ -1,0 +1,14 @@
+services/gateway/node_modules/
+services/review-worker/node_modules/
+cli/node_modules/
+services/gate-service/.gradle/
+services/gate-service/build/
+services/gate-service/bin/
+*.class
+*.jar
+*.log
+.env
+.env.local
+dist/
+coverage/
+.DS_Store
