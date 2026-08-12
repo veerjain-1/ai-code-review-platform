@@ -38,8 +38,8 @@ A high-scale microservices backend providing automated AI-powered code reviews, 
 │  • Security Scanning     │    │  • Merge Gate Rules          │
 │  • Structured Feedback   │    │  • Deployment Checks         │
 └──────────┬───────────────┘    └──────────────┬──────────────┘
-           │                                   │
-           └────────────┬──────────────────────┘
+           │                                  │
+           └────────────┬─────────────────────┘
                         ▼
               ┌───────────────────┐
               │  GitHub API       │
