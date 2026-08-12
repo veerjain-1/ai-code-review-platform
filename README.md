@@ -5,47 +5,47 @@ A high-scale microservices backend providing automated AI-powered code reviews, 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     Client Layer                             │
-│  ┌──────────────┐  ┌──────────────┐  ┌───────────────────┐  │
-│  │  Git Hooks   │  │  CLI Tool    │  │  GitHub Webhooks  │  │
-│  └──────┬───────┘  └──────┬───────┘  └────────┬──────────┘  │
-└─────────┼─────────────────┼───────────────────┼─────────────┘
-          │                 │                   │
-          ▼                 ▼                   ▼
-┌─────────────────────────────────────────────────────────────┐
-│              Node.js API Gateway (Express)                   │
-│              POST /api/v1/reviews                             │
-│              GET  /api/v1/reviews/:id                         │
-│              GET  /api/v1/health                              │
-└─────────────────────────┬───────────────────────────────────┘
-                          │ Kafka Producer
-                          ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    Apache Kafka                              │
-│              Topic: code-review-requests                     │
-│              Topic: review-results                           │
-│              Topic: gate-check-requests                      │
-└──────────┬──────────────────────────────┬───────────────────┘
-           │                              │
-           ▼                              ▼
-┌─────────────────────────┐    ┌─────────────────────────────┐
-│  Node.js LangChain      │    │  Java Spring Boot            │
-│  AI Review Worker        │    │  Gate Check Service          │
-│                          │    │                              │
-│  • Diff Analysis         │    │  • Severity Evaluation       │
-│  • Code Quality Review   │    │  • Metadata Extraction       │
-│  • Security Scanning     │    │  • Merge Gate Rules          │
-│  • Structured Feedback   │    │  • Deployment Checks         │
-└──────────┬───────────────┘    └──────────────┬──────────────┘
-           │                                  │
-           └────────────┬─────────────────────┘
-                        ▼
-              ┌───────────────────┐
-              │  GitHub API       │
-              │  PR Comments      │
-              │  Status Checks    │
-              └───────────────────┘
++-------------------------------------------------------------+
+|                        Client Layer                         |
+|  +--------------+  +--------------+  +-------------------+  |
+|  |  Git Hooks   |  |  CLI Tool    |  |  GitHub Webhooks  |  |
+|  +------+-------+  +------+-------+  +--------+----------+  |
++---------|-----------------|--------------------|-------------+
+          |                 |                    |
+          v                 v                    v
++-------------------------------------------------------------+
+|              Node.js API Gateway (Express)                  |
+|              POST /api/v1/reviews                           |
+|              GET  /api/v1/reviews/:id                       |
+|              GET  /api/v1/health                            |
++-------------------------+-----------------------------------+
+                          | Kafka Producer
+                          v
++-------------------------------------------------------------+
+|                      Apache Kafka                           |
+|              Topic: code-review-requests                    |
+|              Topic: review-results                          |
+|              Topic: gate-check-requests                     |
++----------+--------------------------+-----------------------+
+           |                          |
+           v                          v
++-------------------------+  +-----------------------------+
+|  Node.js LangChain      |  |  Java Spring Boot           |
+|  AI Review Worker        |  |  Gate Check Service         |
+|                          |  |                             |
+|  - Diff Analysis         |  |  - Severity Evaluation      |
+|  - Code Quality Review   |  |  - Metadata Extraction      |
+|  - Security Scanning     |  |  - Merge Gate Rules         |
+|  - Structured Feedback   |  |  - Deployment Checks        |
++----------+---------------+  +--------------+--------------+
+           |                                 |
+           +--------------+-----------------+
+                          v
+                +-------------------+
+                |  GitHub API       |
+                |  PR Comments      |
+                |  Status Checks    |
+                +-------------------+
 ```
 
 ## Services
