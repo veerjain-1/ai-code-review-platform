@@ -9,14 +9,14 @@
     "test": "node --test src/**/*.test.js"
   },
   "dependencies": {
-    "express": "^4.21.0",
-    "kafkajs": "^2.2.4",
-    "uuid": "^10.0.0",
     "cors": "^2.8.5",
-    "helmet": "^8.0.0",
-    "morgan": "^1.10.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
     "express-rate-limit": "^7.4.0",
-    "dotenv": "^16.4.5"
-  },
-  "devDependencies": {}
+    "helmet": "^8.0.0",
+    "kafkajs": "^2.2.4",
+    "morgan": "^1.10.0",
+    "redis": "^6.2.1",
+    "uuid": "^10.0.0"
+  }
 }

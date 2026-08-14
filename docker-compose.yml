@@ -60,5 +60,16 @@ services:
       echo 'Topics created successfully!'
       "
 
+  # ─── Redis Caching Layer ───
+  redis:
+    image: redis:7-alpine
+    container_name: ai-review-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+
 volumes:
   redpanda-data:
+  redis-data:

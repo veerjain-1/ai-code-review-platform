@@ -1,11 +1,15 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { publishReviewRequest } = require('../kafka/producer');
+const redis = require('redis');
 
 const router = express.Router();
 
-// ─── In-memory review store (swap for Redis/DB in production) ───
-const reviewStore = new Map();
+const redisClient = redis.createClient({
+  url: process.env.REDIS_URL || 'redis://localhost:6379'
+});
+redisClient.on('error', (err) => console.error('Redis Client Error', err));
+redisClient.connect().catch(console.error);
 
 /**
  * POST /api/v1/reviews
@@ -38,8 +42,11 @@ router.post('/', async (req, res, next) => {
       updatedAt: new Date().toISOString(),
     };
 
-    // Store the review
-    reviewStore.set(reviewId, reviewRequest);
+    // Store the review in Redis
+    await redisClient.set(`review:${reviewId}`, JSON.stringify(reviewRequest));
+    await redisClient.lPush('recent_reviews', reviewId);
+    // keep only the last 100 for recent
+    await redisClient.lTrim('recent_reviews', 0, 99);
 
     // Publish to Kafka for async processing
     await publishReviewRequest(reviewRequest);
@@ -61,47 +68,71 @@ router.post('/', async (req, res, next) => {
  * GET /api/v1/reviews/:id
  * Get the status/result of a review.
  */
-router.get('/:id', (req, res) => {
-  const review = reviewStore.get(req.params.id);
+router.get('/:id', async (req, res) => {
+  try {
+    const reviewStr = await redisClient.get(`review:${req.params.id}`);
 
-  if (!review) {
-    return res.status(404).json({
-      error: 'Review not found',
-      reviewId: req.params.id,
-    });
+    if (!reviewStr) {
+      return res.status(404).json({
+        error: 'Review not found',
+        reviewId: req.params.id,
+      });
+    }
+
+    res.json(JSON.parse(reviewStr));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch review' });
   }
-
-  res.json(review);
 });
 
 /**
  * GET /api/v1/reviews
  * List recent reviews (paginated).
  */
-router.get('/', (req, res) => {
-  const limit = Math.min(parseInt(req.query.limit) || 20, 100);
-  const reviews = Array.from(reviewStore.values())
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-    .slice(0, limit);
+router.get('/', async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    
+    const recentIds = await redisClient.lRange('recent_reviews', 0, limit - 1);
+    const reviews = [];
+    
+    if (recentIds.length > 0) {
+      const reviewKeys = recentIds.map(id => `review:${id}`);
+      const reviewStrs = await redisClient.mGet(reviewKeys);
+      reviewStrs.forEach(str => {
+        if (str) reviews.push(JSON.parse(str));
+      });
+    }
 
-  res.json({
-    count: reviews.length,
-    total: reviewStore.size,
-    reviews,
-  });
+    const total = await redisClient.lLen('recent_reviews');
+
+    res.json({
+      count: reviews.length,
+      total,
+      reviews,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch recent reviews' });
+  }
 });
 
 /**
  * Update a review status (called internally by workers).
  */
-function updateReview(reviewId, updates) {
-  const review = reviewStore.get(reviewId);
-  if (review) {
-    Object.assign(review, updates, { updatedAt: new Date().toISOString() });
-    reviewStore.set(reviewId, review);
+async function updateReview(reviewId, updates) {
+  try {
+    const reviewStr = await redisClient.get(`review:${reviewId}`);
+    if (reviewStr) {
+      const review = JSON.parse(reviewStr);
+      Object.assign(review, updates, { updatedAt: new Date().toISOString() });
+      await redisClient.set(`review:${reviewId}`, JSON.stringify(review));
+    }
+  } catch (err) {
+    console.error(`Failed to update review ${reviewId}:`, err);
   }
 }
 
 module.exports = router;
 module.exports.updateReview = updateReview;
-module.exports.reviewStore = reviewStore;

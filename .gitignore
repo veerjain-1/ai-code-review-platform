@@ -1,6 +1,4 @@
-services/gateway/node_modules/
-services/review-worker/node_modules/
-cli/node_modules/
+node_modules/
 services/gate-service/.gradle/
 services/gate-service/build/
 services/gate-service/bin/
