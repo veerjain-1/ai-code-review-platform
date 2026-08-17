@@ -50,7 +50,7 @@ async function main() {
       // ─── Step 3: Post to GitHub PR if applicable ───
       if (pr_url && pr_number && process.env.GITHUB_TOKEN) {
         console.log(`💬 Posting review to PR #${pr_number}...`);
-        await githubPublisher.postReview(repo, pr_number, reviewResult);
+        await githubPublisher.postReview(repo, pr_number, reviewResult, commit_sha);
         console.log(`✅ Review posted to GitHub PR #${pr_number}`);
       }
 
