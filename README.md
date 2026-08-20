@@ -4,48 +4,16 @@ A high-scale microservices backend providing automated AI-powered code reviews, 
 
 ## Architecture
 
-```
-+-------------------------------------------------------------+
-|                        Client Layer                         |
-|  +--------------+  +--------------+  +-------------------+  |
-|  |  Git Hooks   |  |  CLI Tool    |  |  GitHub Webhooks  |  |
-|  +------+-------+  +------+-------+  +--------+----------+  |
-+---------|-----------------|--------------------|-------------+
-          |                 |                    |
-          v                 v                    v
-+-------------------------------------------------------------+
-|              Node.js API Gateway (Express)                  |
-|              POST /api/v1/reviews                           |
-|              GET  /api/v1/reviews/:id                       |
-|              GET  /api/v1/health                            |
-+-------------------------+-----------------------------------+
-                          | Kafka Producer
-                          v
-+-------------------------------------------------------------+
-|                      Apache Kafka                           |
-|              Topic: code-review-requests                    |
-|              Topic: review-results                          |
-|              Topic: gate-check-requests                     |
-+----------+--------------------------+-----------------------+
-           |                          |
-           v                          v
-+-------------------------+  +-----------------------------+
-|  Node.js LangChain      |  |  Java Spring Boot           |
-|  AI Review Worker        |  |  Gate Check Service         |
-|                          |  |                             |
-|  - Diff Analysis         |  |  - Severity Evaluation      |
-|  - Code Quality Review   |  |  - Metadata Extraction      |
-|  - Security Scanning     |  |  - Merge Gate Rules         |
-|  - Structured Feedback   |  |  - Deployment Checks        |
-+----------+---------------+  +--------------+--------------+
-           |                                 |
-           +--------------+-----------------+
-                          v
-                +-------------------+
-                |  GitHub API       |
-                |  PR Comments      |
-                |  Status Checks    |
-                +-------------------+
+```mermaid
+graph TD
+    A[Git Hooks / CLI] -->|POST /api/v1/reviews| B(Gateway: Node.js)
+    C[GitHub Webhooks] -->|POST /api/v1/reviews| B
+    B -->|Publish| D{Kafka: code-review-requests}
+    D -->|Consume| E[Review Worker: LangChain]
+    E -->|Publish Results| F{Kafka: review-results}
+    F -->|Consume| G[Gate Check Service: Spring Boot]
+    E -->|API| H[GitHub PR Comments]
+    G -->|API| I[GitHub Status Checks]
 ```
 
 ## Services
