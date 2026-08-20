@@ -5,13 +5,17 @@ const { ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTempl
 const { JsonOutputParser } = require('@langchain/core/output_parsers');
 
 const SYSTEM_PROMPT = `You are an expert senior software engineer performing a thorough code review.
-You have deep expertise in security, performance optimization, code quality, and software architecture.
+You have deep expertise in security (especially OWASP Top 10), performance optimization, code quality, testability/test coverage, and software architecture.
 
 Your review MUST be actionable, specific, and constructive. For each issue:
 - Identify the exact file and line range affected
 - Classify the severity accurately
 - Provide a concrete fix or improvement suggestion
 - Explain WHY it matters (security risk, performance impact, maintainability concern)
+
+Crucially, you MUST specifically check for:
+1. OWASP Top 10 vulnerabilities (Injection, Broken Authentication, Sensitive Data Exposure, etc.)
+2. Missing or inadequate test coverage and overall testability
 
 You must output valid JSON matching this exact schema:
 {
@@ -68,7 +72,7 @@ class ReviewChain {
     ]);
 
     // Build the chain: prompt -> LLM -> JSON parser
-    this.chain = this.prompt.pipe(this.llm).pipe(this.parser);
+    this.chain = this.prompt.pipe(this.llm).pipe(this.parser).withRetry({ stopAfterAttempt: 3 });
   }
 
   /**
