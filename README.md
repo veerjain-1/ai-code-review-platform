@@ -68,6 +68,21 @@ ai-review review --pr https://github.com/org/repo/pull/1
 
 ## Configuration
 
+### Environment Variables
+
+Each service requires specific environment variables to operate. Create a `.env` file in the root of each service.
+
+**Gateway (`services/gateway/.env`)**
+```env
+PORT=3000
+KAFKA_BROKERS=localhost:19092
+CORS_ORIGIN=*
+RATE_LIMIT_WINDOW_MS=900000
+RATE_LIMIT_MAX=100
+```
+
+### Local Config File
+
 Create a `.ai-review.yaml` in your project root:
 
 ```yaml
