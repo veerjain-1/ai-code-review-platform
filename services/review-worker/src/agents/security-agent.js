@@ -1,17 +1,11 @@
-const { ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate } = require('@langchain/core/prompts');
-const { JsonOutputParser } = require('@langchain/core/output_parsers');
-const { createLLM } = require('../utils/llm');
+const { llm } = require('../utils/llm');
+const { extractJson } = require('../utils/json');
 
 const SYSTEM_PROMPT = `You are a highly specialized Security Code Review Agent.
 Your SOLE focus is identifying security vulnerabilities, data leaks, and insecure coding practices (e.g., OWASP Top 10).
 Do NOT comment on code style, performance, or testing unless it directly impacts security.
 
-Your review MUST be actionable, specific, and constructive. For each issue:
-- Identify the exact file and line range affected
-- Classify the severity accurately (CRITICAL or WARNING)
-- Provide a concrete fix or improvement suggestion
-- Explain the security risk
-
+Your review MUST be actionable, specific, and constructive.
 You must output valid JSON matching this schema:
 {
   "issues": [
@@ -29,29 +23,17 @@ You must output valid JSON matching this schema:
   ]
 }`;
 
-const HUMAN_PROMPT = `Review the following git diff for SECURITY issues only.
-
---- BEGIN DIFF ---
-{diff}
---- END DIFF ---
-
-Provide your structured security review as JSON:`;
-
 class SecurityAgent {
-  constructor() {
-    this.llm = createLLM(0.1); // Lower temperature for security analysis
-    this.parser = new JsonOutputParser();
-    this.prompt = ChatPromptTemplate.fromMessages([
-      SystemMessagePromptTemplate.fromTemplate(SYSTEM_PROMPT),
-      HumanMessagePromptTemplate.fromTemplate(HUMAN_PROMPT),
-    ]);
-    this.chain = this.prompt.pipe(this.llm).pipe(this.parser).withRetry({ stopAfterAttempt: 3 });
-  }
-
   async run(state) {
-    console.log('🛡️  Running Security Agent...');
+    console.log('🛡️  Running Local Security Agent...');
     try {
-      const result = await this.chain.invoke({ diff: state.diff });
+      const messages = [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: `Review the following git diff for SECURITY issues only.\n\n--- BEGIN DIFF ---\n${state.diff}\n--- END DIFF ---\n\nProvide your structured security review as JSON:` }
+      ];
+
+      const rawOutput = await llm.generate(messages);
+      const result = extractJson(rawOutput);
       return { security_issues: result.issues || [] };
     } catch (err) {
       console.error('❌ Security Agent failed:', err.message);

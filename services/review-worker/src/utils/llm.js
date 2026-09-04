@@ -1,41 +1,68 @@
-const { ChatOpenAI } = require('@langchain/openai');
-const { ChatAnthropic } = require('@langchain/anthropic');
-const { ChatGoogleGenerativeAI } = require('@langchain/google-genai');
+const { pipeline, env } = require('@xenova/transformers');
 
-/**
- * Create the LLM instance based on the configured provider.
- */
-function createLLM(overrideTemperature = null) {
-  const provider = (process.env.LLM_PROVIDER || 'openai').toLowerCase();
-  const temperature = overrideTemperature !== null ? overrideTemperature : (parseFloat(process.env.LLM_TEMPERATURE) || 0.2);
-  const maxTokens = parseInt(process.env.LLM_MAX_TOKENS) || 4096;
+// Optimize ONNX Runtime for Node.js environments
+env.allowLocalModels = false; // Set to true if you download weights manually
+env.useBrowserCache = false;
 
-  switch (provider) {
-    case 'anthropic':
-      return new ChatAnthropic({
-        modelName: process.env.LLM_MODEL || 'claude-sonnet-4-20250514',
-        temperature,
-        maxTokens,
-        anthropicApiKey: process.env.ANTHROPIC_API_KEY,
-      });
+class LocalInferenceEngine {
+  constructor() {
+    this.generator = null;
+    this.modelName = process.env.MODEL_NAME || 'Xenova/Qwen1.5-0.5B-Chat';
+    this.initializing = null;
+  }
 
-    case 'google':
-      return new ChatGoogleGenerativeAI({
-        modelName: process.env.LLM_MODEL || 'gemini-pro',
-        temperature,
-        maxOutputTokens: maxTokens,
-        apiKey: process.env.GOOGLE_API_KEY,
-      });
+  async init() {
+    if (this.generator) return;
+    if (this.initializing) {
+      await this.initializing;
+      return;
+    }
 
-    case 'openai':
-    default:
-      return new ChatOpenAI({
-        modelName: process.env.LLM_MODEL || 'gpt-4o',
-        temperature,
-        maxTokens,
-        openAIApiKey: process.env.OPENAI_API_KEY,
-      });
+    console.log(`\n⏳ Initializing local inference engine with model: ${this.modelName}`);
+    console.log(`   (This may take a minute on the first run to download the ONNX weights)`);
+
+    this.initializing = pipeline('text-generation', this.modelName, {
+      progress_callback: (x) => {
+        if (x.status === 'downloading' && x.name.endsWith('.onnx')) {
+          process.stdout.write(`\r📥 Downloading ${x.file}: ${Math.round(x.progress)}%`);
+        }
+      }
+    });
+
+    this.generator = await this.initializing;
+    console.log(`\n✅ Local model loaded successfully!`);
+  }
+
+  /**
+   * Generate text based on a ChatML prompt structure
+   * @param {Array<{role: string, content: string}>} messages
+   */
+  async generate(messages) {
+    await this.init();
+
+    // Format the messages for the Chat model (e.g. Qwen / TinyLlama)
+    // Most @xenova/transformers chat models support apply_chat_template internally,
+    // but if not, we can build the standard ChatML string manually.
+    
+    // We'll manually construct the ChatML template for reliability
+    let prompt = '';
+    for (const msg of messages) {
+      prompt += `<|im_start|>${msg.role}\n${msg.content}<|im_end|>\n`;
+    }
+    prompt += `<|im_start|>assistant\n`;
+
+    const result = await this.generator(prompt, {
+      max_new_tokens: 512,
+      temperature: 0.1,
+      do_sample: true,
+      return_full_text: false,
+    });
+
+    return result[0].generated_text.trim();
   }
 }
 
-module.exports = { createLLM };
+// Export a singleton instance
+const llm = new LocalInferenceEngine();
+
+module.exports = { llm };
