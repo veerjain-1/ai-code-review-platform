@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "commander": "^12.1.0",
-    "chalk": "^4.1.2",
+    "chalk": "^6.0.0",
     "ora": "^5.4.1",
     "inquirer": "^8.2.6",
     "node-fetch": "^2.7.0",
