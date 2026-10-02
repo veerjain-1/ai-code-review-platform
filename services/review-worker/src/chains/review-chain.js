@@ -1,6 +1,7 @@
 const { SecurityAgent } = require('../agents/security-agent');
 const { QualityAgent } = require('../agents/quality-agent');
 const { SynthesizerAgent } = require('../agents/synthesizer-agent');
+const { computeDiffStats } = require('../utils/diff-stats');
 
 class ReviewChain {
   constructor() {
@@ -48,30 +49,38 @@ class ReviewChain {
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
       console.log(`⏱️  Local SLM review completed in ${elapsed}s`);
 
-      // Ensure metadata is filled
+      // Compute real metadata from the full (untruncated) diff -- the LLM
+      // agents only see the truncated diff for context-length reasons, but
+      // file/line/language stats should reflect the actual change.
+      const diffStats = computeDiffStats(diff);
+
       if (!final_review.metadata) {
         final_review.metadata = {};
       }
-      final_review.metadata.files_reviewed = final_review.metadata.files_reviewed || 0;
-      final_review.metadata.total_additions = final_review.metadata.total_additions || 0;
-      final_review.metadata.total_deletions = final_review.metadata.total_deletions || 0;
-      final_review.metadata.languages_detected = final_review.metadata.languages_detected || [];
+      final_review.metadata.files_reviewed = diffStats.filesReviewed;
+      final_review.metadata.total_additions = diffStats.totalAdditions;
+      final_review.metadata.total_deletions = diffStats.totalDeletions;
+      final_review.metadata.languages_detected = diffStats.languagesDetected;
 
       return final_review;
     } catch (err) {
       console.error('❌ Local review failed:', err.message);
 
-      // Return a fallback result on LLM failure
+      // Return a fallback result on LLM failure. Metadata is still computed
+      // from the real diff so a synthesis/LLM failure doesn't also hide
+      // the (cheap, local) file/line/language stats.
+      const diffStats = computeDiffStats(diff);
+
       return {
         summary: `Review failed: ${err.message}`,
         score: 0,
         issues: [],
         highlights: [],
         metadata: {
-          files_reviewed: 0,
-          total_additions: 0,
-          total_deletions: 0,
-          languages_detected: [],
+          files_reviewed: diffStats.filesReviewed,
+          total_additions: diffStats.totalAdditions,
+          total_deletions: diffStats.totalDeletions,
+          languages_detected: diffStats.languagesDetected,
           error: err.message,
         },
       };
