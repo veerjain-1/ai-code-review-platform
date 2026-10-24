@@ -1,4 +1,5 @@
 const { Octokit } = require('@octokit/rest');
+const { PRFormatter } = require('../utils/pr-formatter');
 
 class GithubPublisher {
   constructor() {
@@ -28,10 +29,10 @@ class GithubPublisher {
     const [owner, repo] = repoFullName.split('/');
     
     // Determine review event based on severity
-    const hasCritical = reviewResult.issues.some(i => i.severity === 'CRITICAL');
+    const hasCritical = (reviewResult.issues || []).some(i => i.severity === 'CRITICAL');
     const event = hasCritical ? 'REQUEST_CHANGES' : 'COMMENT';
     
-    const body = this._formatReviewSummary(reviewResult);
+    const body = PRFormatter.formatSummary(reviewResult);
     
     // Create line-by-line comments
     const comments = [];
@@ -41,7 +42,7 @@ class GithubPublisher {
         comments.push({
           path: issue.file,
           line: issue.line_end, // using line_end to place it at the end of the issue block
-          body: this._formatSingleIssue(issue)
+          body: PRFormatter.formatSingleIssue(issue)
         });
       }
     }
@@ -62,7 +63,7 @@ class GithubPublisher {
       console.warn('⚠️  Falling back to single PR issue comment...');
       
       // Fallback: Post everything as a single comment
-      const fallbackBody = this._formatReviewComment(reviewResult);
+      const fallbackBody = PRFormatter.formatSummary(reviewResult);
       await this.octokit.issues.createComment({
         owner,
         repo,
