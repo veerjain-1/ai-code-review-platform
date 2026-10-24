@@ -1,12 +1,15 @@
 const { SecurityAgent } = require('../agents/security-agent');
 const { QualityAgent } = require('../agents/quality-agent');
+const { ArchitectureAgent } = require('../agents/architecture-agent');
 const { SynthesizerAgent } = require('../agents/synthesizer-agent');
 const { computeDiffStats } = require('../utils/diff-stats');
+const { RuleChecker } = require('../utils/rule-checker');
 
 class ReviewChain {
   constructor() {
     this.securityAgent = new SecurityAgent();
     this.qualityAgent = new QualityAgent();
+    this.architectureAgent = new ArchitectureAgent();
     this.synthesizerAgent = new SynthesizerAgent();
   }
 
@@ -26,6 +29,9 @@ class ReviewChain {
     const startTime = Date.now();
 
     try {
+      // 1. Fast deterministic static rule scanning (zero inference latency)
+      const staticIssues = RuleChecker.scan(diff);
+
       const state = {
         diff: truncatedDiff,
         repo: context.repo || 'unknown',
@@ -33,18 +39,26 @@ class ReviewChain {
         commit_sha: context.commit_sha || 'unknown',
       };
 
-      // Run specialized agents in parallel
-      const [secResult, qualResult] = await Promise.all([
+      // 2. Run specialized agents in parallel
+      const [secResult, qualResult, archResult] = await Promise.all([
         this.securityAgent.run(state),
-        this.qualityAgent.run(state)
+        this.qualityAgent.run(state),
+        this.architectureAgent.run(state),
       ]);
       
-      state.security_issues = secResult.security_issues;
-      state.quality_issues = qualResult.quality_issues;
-      state.highlights = qualResult.highlights;
+      const staticSecurity = staticIssues.filter(i => i.category === 'security');
+      const staticQuality = staticIssues.filter(i => i.category !== 'security');
 
-      // Run synthesizer
+      state.security_issues = [...staticSecurity, ...(secResult.security_issues || [])];
+      state.quality_issues = [...staticQuality, ...(qualResult.quality_issues || []), ...(archResult.architecture_issues || [])];
+      state.highlights = qualResult.highlights || [];
+      state.breaking_changes = archResult.breaking_changes || [];
+
+      // 3. Run synthesizer to deduplicate and score
       const { final_review } = await this.synthesizerAgent.run(state);
+      if (state.breaking_changes.length > 0) {
+        final_review.breaking_changes = state.breaking_changes;
+      }
 
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
       console.log(`⏱️  Local SLM review completed in ${elapsed}s`);
