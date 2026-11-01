@@ -4,6 +4,7 @@ services/gate-service/build/
 services/gate-service/bin/
 *.class
 *.jar
+!services/gate-service/gradle/wrapper/gradle-wrapper.jar
 *.log
 .env
 .env.local
