@@ -1,9 +1,18 @@
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
+
 const chalk = require('chalk');
 const ora = require('ora');
 const fetch = require('node-fetch');
 const Table = require('cli-table3');
 const { loadConfig } = require('../utils/config');
+
+function git(args) {
+  return execFileSync('git', args, { encoding: 'utf-8' });
+}
+
+function resolveCommit(revision) {
+  return git(['rev-parse', '--verify', '--end-of-options', `${revision}^{commit}`]).trim();
+}
 
 /**
  * Review command — captures git diff and sends it for AI review.
@@ -20,25 +29,25 @@ async function reviewCommand(options) {
     // ─── Determine what to review ───
     if (options.staged) {
       console.log(chalk.cyan('📋 Reviewing staged changes...'));
-      diff = execSync('git diff --cached', { encoding: 'utf-8' });
-      branch = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf-8' }).trim();
+      diff = git(['diff', '--cached']);
+      branch = git(['rev-parse', '--abbrev-ref', 'HEAD']).trim();
     } else if (options.commit) {
       console.log(chalk.cyan(`📋 Reviewing commit: ${options.commit}`));
-      diff = execSync(`git show ${options.commit} --format=""`, { encoding: 'utf-8' });
+      diff = git(['show', '--format=', resolveCommit(options.commit), '--']);
       commitSha = options.commit;
-      branch = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf-8' }).trim();
+      branch = git(['rev-parse', '--abbrev-ref', 'HEAD']).trim();
     } else if (options.branch) {
       const targetBranch = options.branch;
       console.log(chalk.cyan(`📋 Reviewing diff against branch: ${targetBranch}`));
-      diff = execSync(`git diff ${targetBranch}...HEAD`, { encoding: 'utf-8' });
-      branch = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf-8' }).trim();
+      diff = git(['diff', `${resolveCommit(targetBranch)}...HEAD`, '--']);
+      branch = git(['rev-parse', '--abbrev-ref', 'HEAD']).trim();
     } else if (options.file) {
       console.log(chalk.cyan(`📋 Reviewing file: ${options.file}`));
-      diff = execSync(`git diff HEAD -- ${options.file}`, { encoding: 'utf-8' });
+      diff = git(['--literal-pathspecs', 'diff', 'HEAD', '--', options.file]);
       if (!diff) {
-        diff = execSync(`git diff -- ${options.file}`, { encoding: 'utf-8' });
+        diff = git(['--literal-pathspecs', 'diff', '--', options.file]);
       }
-      branch = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf-8' }).trim();
+      branch = git(['rev-parse', '--abbrev-ref', 'HEAD']).trim();
     } else if (options.pr) {
       console.log(chalk.cyan(`📋 Reviewing PR: ${options.pr}`));
       // For PR review, send the URL and let the worker fetch the diff
@@ -46,8 +55,8 @@ async function reviewCommand(options) {
     } else {
       // Default: review uncommitted changes
       console.log(chalk.cyan('📋 Reviewing uncommitted changes...'));
-      diff = execSync('git diff', { encoding: 'utf-8' });
-      branch = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf-8' }).trim();
+      diff = git(['diff']);
+      branch = git(['rev-parse', '--abbrev-ref', 'HEAD']).trim();
     }
 
     if (!diff || diff.trim().length === 0) {
@@ -60,7 +69,7 @@ async function reviewCommand(options) {
     // Get repo name
     let repo = 'local';
     try {
-      const remoteUrl = execSync('git remote get-url origin', { encoding: 'utf-8' }).trim();
+      const remoteUrl = git(['remote', 'get-url', 'origin']).trim();
       const match = remoteUrl.match(/github\.com[:/](.+?)(?:\.git)?$/);
       if (match) repo = match[1];
     } catch (_) {
