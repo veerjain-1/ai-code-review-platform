@@ -18,8 +18,12 @@ jobs:
         node-version: '18'
         cache: 'npm'
         cache-dependency-path: |
+          cli/package-lock.json
           services/gateway/package-lock.json
           services/review-worker/package-lock.json
+
+    - name: Test CLI
+      run: cd cli && npm ci && npm test
 
     - name: Install dependencies (Gateway)
       run: cd services/gateway && npm ci
