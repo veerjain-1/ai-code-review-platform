@@ -24,6 +24,7 @@ async function reviewCommand(options) {
   let diff = '';
   let branch = '';
   let commitSha = '';
+  let spinner;
 
   try {
     // ─── Determine what to review ───
@@ -83,11 +84,12 @@ async function reviewCommand(options) {
       try {
         const { ReviewChain } = require('../../services/review-worker/src/chains/review-chain');
         const chain = new ReviewChain();
-        const spinner = ora('Running AI review...').start();
+        spinner = ora('Running AI review...').start();
         const result = await chain.review(diff, { repo, branch, commit_sha: commitSha });
         spinner.stop();
         displayResult(result, options.output);
       } catch (err) {
+        process.exitCode = 1;
         console.error(chalk.red('\n❌ Local review failed. Make sure your API key is set.'));
         console.error(chalk.gray(`   Error: ${err.message}`));
         console.log(chalk.gray('\n   Set your API key:'));
@@ -97,7 +99,7 @@ async function reviewCommand(options) {
     }
 
     // ─── Gateway mode: send to API ───
-    const spinner = ora('Submitting review request...').start();
+    spinner = ora('Submitting review request...').start();
 
     const response = await fetch(`${gatewayUrl}/api/v1/reviews`, {
       method: 'POST',
@@ -121,10 +123,12 @@ async function reviewCommand(options) {
       console.log(chalk.gray(`\n   Check status: ai-review status ${data.reviewId}`));
       console.log(chalk.gray(`   Watch: ai-review status ${data.reviewId} --watch`));
     } else {
+      process.exitCode = 1;
       console.error(chalk.red(`\n❌ Failed to submit review: ${data.error}`));
     }
 
   } catch (err) {
+    process.exitCode = 1;
     if (err.code === 'ECONNREFUSED') {
       console.error(chalk.red('\n❌ Cannot connect to the gateway.'));
       console.error(chalk.gray(`   Make sure the gateway is running at ${gatewayUrl}`));
@@ -132,6 +136,8 @@ async function reviewCommand(options) {
     } else {
       console.error(chalk.red(`\n❌ Review failed: ${err.message}`));
     }
+  } finally {
+    if (spinner) spinner.stop();
   }
 }
 
