@@ -1,6 +1,9 @@
 const { describe, it, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
-const { execFileSync } = require('node:child_process');
+const { execFileSync, execFile } = require('node:child_process');
+const { promisify } = require('node:util');
+const runFile = promisify(execFile);
+const cliPath = require.resolve('../../bin/ai-review.js');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -9,7 +12,8 @@ const { reviewCommand } = require('./review');
 
 describe('reviewCommand Git inputs', () => {
   let directory, previousCwd, server, gateway, requests, errors;
-  let originalLog, originalError;
+  let originalLog, originalError, originalExitCode;
+  let responseMode;
 
   function git(...args) {
     return execFileSync('git', args, { encoding: 'utf8' }).trim();
@@ -27,6 +31,9 @@ describe('reviewCommand Git inputs', () => {
     fs.writeFileSync('normal.js', 'before\n');
     git('add', '.');
     git('commit', '-m', 'Initial fixture');
+    originalExitCode = process.exitCode;
+    process.exitCode = undefined;
+    responseMode = 'success';
     requests = [];
     errors = [];
     originalLog = console.log;
@@ -37,6 +44,20 @@ describe('reviewCommand Git inputs', () => {
       let body = '';
       for await (const chunk of req) body += chunk;
       requests.push(JSON.parse(body));
+      if (responseMode === 'disconnect') {
+        req.socket.destroy();
+        return;
+      }
+      if (responseMode === 'unavailable') {
+        res.writeHead(503, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Worker unavailable' }));
+        return;
+      }
+      if (responseMode === 'invalid-json') {
+        res.writeHead(502, { 'Content-Type': 'text/plain' });
+        res.end('Bad gateway');
+        return;
+      }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ reviewId: 'fixture', status: 'queued' }));
     });
@@ -48,6 +69,7 @@ describe('reviewCommand Git inputs', () => {
   });
 
   afterEach(async () => {
+    process.exitCode = originalExitCode;
     console.log = originalLog;
     console.error = originalError;
     if (server.listening) await new Promise((resolve) => server.close(resolve));
@@ -120,6 +142,7 @@ describe('reviewCommand Git inputs', () => {
       assert.equal(requests.length, 0);
       assert.equal(errors.length, 1);
       assert.match(errors[0], /Review failed/);
+      assert.equal(process.exitCode, 1);
     });
   }
 
@@ -127,6 +150,7 @@ describe('reviewCommand Git inputs', () => {
     await review();
     assert.equal(requests.length, 0);
     assert.deepEqual(errors, []);
+    assert.equal(process.exitCode, undefined);
   });
 
   it('submits a PR URL without requesting a local diff', async () => {
@@ -135,4 +159,74 @@ describe('reviewCommand Git inputs', () => {
     assert.equal(requests[0].diff, null);
     assert.equal(requests[0].pr_url, 'https://github.com/example/project/pull/1');
   });
+
+  async function runCli(args = [], nodeArgs = []) {
+    try {
+      const result = await runFile(process.execPath, [
+        ...nodeArgs, cliPath, 'review', '--gateway', gateway, ...args,
+      ], { timeout: 10000 });
+      return { ...result, code: 0 };
+    } catch (err) {
+      // A timed-out or killed process must not masquerade as an expected CLI error.
+      assert.equal(err.killed, false);
+      assert.equal(err.signal, null);
+      return { stdout: err.stdout, stderr: err.stderr, code: err.code };
+    }
+  }
+
+  it('exits successfully after submitting a review', async () => {
+    fs.writeFileSync('normal.js', 'CLI success\n');
+    const result = await runCli();
+    assert.equal(result.code, 0);
+    assert.equal(requests.length, 1);
+    assert.match(result.stdout, /Review submitted successfully/);
+  });
+
+  it('exits successfully when the working tree has no changes', async () => {
+    const result = await runCli();
+    assert.equal(result.code, 0);
+    assert.equal(requests.length, 0);
+    assert.match(result.stdout, /No changes detected/);
+  });
+
+  for (const mode of ['unavailable', 'invalid-json', 'disconnect']) {
+    it(`exits with failure for a ${mode} gateway response`, async () => {
+      responseMode = mode;
+      fs.writeFileSync('normal.js', 'CLI failure\n');
+      const result = await runCli();
+      assert.equal(result.code, 1);
+      assert.equal(requests.length, 1);
+      assert.match(result.stderr, mode === 'unavailable' ? /Worker unavailable/ : /Review failed/);
+      assert.doesNotMatch(result.stdout, /Review submitted successfully/);
+    });
+  }
+
+  it('exits with failure for an invalid Git revision', async () => {
+    const result = await runCli(['--commit', 'missing-revision']);
+    assert.equal(result.code, 1);
+    assert.equal(requests.length, 0);
+    assert.match(result.stderr, /Review failed/);
+  });
+
+  it('exits with failure when the local review engine rejects', async () => {
+    fs.writeFileSync('normal.js', 'local failure\n');
+    const preload = path.join(directory, 'local-engine.cjs');
+    fs.writeFileSync(preload, `
+      const Module = require('node:module');
+      const originalLoad = Module._load;
+      Module._load = function(request, ...args) {
+        if (request.endsWith('/chains/review-chain')) {
+          return { ReviewChain: class {
+            async review() { throw new Error('Local engine fixture failure'); }
+          } };
+        }
+        return originalLoad.call(this, request, ...args);
+      };
+    `);
+    const result = await runCli(['--local'], ['--require', preload]);
+    assert.equal(result.code, 1);
+    assert.equal(requests.length, 0);
+    assert.match(result.stderr, /Local engine fixture failure/);
+  });
+
 });
