@@ -25,8 +25,8 @@ jobs:
     - name: Test CLI
       run: cd cli && npm ci && npm test
 
-    - name: Install dependencies (Gateway)
-      run: cd services/gateway && npm ci
+    - name: Test Gateway
+      run: cd services/gateway && npm ci && npm test
 
     - name: Install dependencies (Review Worker)
       run: cd services/review-worker && npm ci

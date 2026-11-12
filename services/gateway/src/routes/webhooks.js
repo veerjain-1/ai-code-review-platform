@@ -1,5 +1,5 @@
 const express = require('express');
-const crypto = require('crypto');
+const { isValidGitHubSignature } = require('../webhooks/body');
 const { v4: uuidv4 } = require('uuid');
 const { publishReviewRequest } = require('../kafka/producer');
 
@@ -16,12 +16,8 @@ router.post('/github', async (req, res, next) => {
 
     // Verify webhook signature if secret is configured
     const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
-    if (webhookSecret && signature) {
-      const hmac = crypto.createHmac('sha256', webhookSecret);
-      const digest = 'sha256=' + hmac.update(JSON.stringify(req.body)).digest('hex');
-      if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest))) {
-        return res.status(401).json({ error: 'Invalid webhook signature' });
-      }
+    if (webhookSecret && !isValidGitHubSignature(req.rawBody, signature, webhookSecret)) {
+      return res.status(401).json({ error: 'Invalid webhook signature' });
     }
 
     // Only process pull_request events

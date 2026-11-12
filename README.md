@@ -108,3 +108,9 @@ gate_checks:
 ## License
 
 MIT
+
+## GitHub webhook verification
+
+The gateway accepts GitHub events at `/api/v1/webhooks/github`. When `GITHUB_WEBHOOK_SECRET` is configured, every event must include a valid `X-Hub-Signature-256` HMAC over the exact JSON request bytes. Missing, malformed, or incorrect signatures return HTTP `401` before publishing a review request. The webhook parser retains raw bytes before general JSON parsing; formatting and trailing newlines are part of the signed payload.
+
+Unsigned local development remains available when no webhook secret is configured. Configure a secret before exposing the endpoint to GitHub.
