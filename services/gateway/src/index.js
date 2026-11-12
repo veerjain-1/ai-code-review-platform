@@ -9,6 +9,7 @@ const { connectProducer, disconnectProducer } = require('./kafka/producer');
 const reviewRoutes = require('./routes/reviews');
 const healthRoutes = require('./routes/health');
 const webhookRoutes = require('./routes/webhooks');
+const { parseWebhookBody } = require('./webhooks/body');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -31,6 +32,7 @@ const limiter = rateLimit({
 app.use('/api/', limiter);
 
 // ─── Body Parsing ───
+app.use('/api/v1/webhooks', parseWebhookBody);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
