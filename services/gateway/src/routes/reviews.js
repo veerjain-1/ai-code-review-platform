@@ -92,7 +92,15 @@ router.get('/:id', async (req, res) => {
  */
 router.get('/', async (req, res) => {
   try {
-    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const requestedLimit = req.query.limit;
+    let limit = 20;
+    if (requestedLimit !== undefined) {
+      if (typeof requestedLimit !== 'string' || !/^[0-9]+$/.test(requestedLimit) ||
+          !Number.isSafeInteger(Number(requestedLimit)) || Number(requestedLimit) <= 0) {
+        return res.status(400).json({ error: 'limit must be a positive safe integer in decimal notation' });
+      }
+      limit = Math.min(Number(requestedLimit), 100);
+    }
     
     const recentIds = await redisClient.lRange('recent_reviews', 0, limit - 1);
     const reviews = [];

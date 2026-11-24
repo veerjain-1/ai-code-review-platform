@@ -114,3 +114,14 @@ MIT
 The gateway accepts GitHub events at `/api/v1/webhooks/github`. When `GITHUB_WEBHOOK_SECRET` is configured, every event must include a valid `X-Hub-Signature-256` HMAC over the exact JSON request bytes. Missing, malformed, or incorrect signatures return HTTP `401` before publishing a review request. The webhook parser retains raw bytes before general JSON parsing; formatting and trailing newlines are part of the signed payload.
 
 Unsigned local development remains available when no webhook secret is configured. Configure a secret before exposing the endpoint to GitHub.
+
+### Review list API
+
+`GET /api/v1/reviews?limit=20` returns recent reviews with `count`, `total`, and
+`reviews` fields. Omitting `limit` defaults to 20. A supplied limit must be one
+positive decimal integer within JavaScript's safe integer range; valid values
+above 100 are capped at 100. Leading zeroes are accepted.
+
+Empty, zero, negative, fractional, non-numeric, unsafe, repeated, and structured
+limits return HTTP 400 before stored reviews are read. For example,
+`?limit=-1`, `?limit=2abc`, and `?limit=1&limit=2` are rejected.
