@@ -21,7 +21,7 @@ router.post('/', async (req, res, next) => {
     const { repo, branch, diff, pr_url, commit_sha, metadata } = req.body;
 
     // Validate required fields
-    if (!diff || diff.trim().length === 0) {
+    if (typeof diff !== 'string' || diff.trim().length === 0) {
       return res.status(400).json({
         error: 'Missing required field: diff',
         hint: 'Provide a git diff string in the request body.',
