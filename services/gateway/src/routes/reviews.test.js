@@ -6,6 +6,9 @@ let calls = [], missingRecord;
 const ids = Array.from({ length: 100 }, (_, i) => String(i));
 const client = {
   on() { return this; }, async connect() {},
+  async set(key, value) { calls.push(['set', key, value]); },
+  async lPush(key, value) { calls.push(['lPush', key, value]); },
+  async lTrim(key, start, stop) { calls.push(['lTrim', key, start, stop]); },
   async lRange(key, start, stop) {
     calls.push(['lRange', key, start, stop]);
     return ids.slice(start, stop < 0 ? ids.length + stop + 1 : stop + 1);
@@ -15,7 +18,7 @@ const client = {
 };
 // Exercise the actual router over HTTP; replace only the external boundaries.
 const boundaries = [[require.resolve('redis'), { createClient: () => client }],
-  [require.resolve('../kafka/producer'), { publishReviewRequest: async () => {} }]];
+  [require.resolve('../kafka/producer'), { publishReviewRequest: async value => { calls.push(['publish', value]); } }]];
 const saved = boundaries.map(([path]) => require.cache[path]);
 let router;
 try {
@@ -24,23 +27,26 @@ try {
 } finally {
   boundaries.forEach(([path], i) => { if (saved[i]) require.cache[path] = saved[i]; else delete require.cache[path]; });
 }
-describe('review-list limit validation', () => {
+describe('review route validation', () => {
   let server;
   beforeEach(async () => {
     calls = []; missingRecord = undefined;
-    const app = express(); app.use('/api/v1/reviews', router);
+    const app = express(); app.use(express.json()); app.use('/api/v1/reviews', router);
+    app.use((err, _req, res, _next) => res.status(err.status || 500).json({ error: err.message }));
     server = app.listen(0, '127.0.0.1');
     await new Promise((resolve, reject) => { server.once('listening', resolve); server.once('error', reject); });
   });
   afterEach(async () => new Promise(resolve => server.close(resolve)));
-  function request(query) {
+  function request(query, body) {
     return new Promise((resolve, reject) => {
-      const req = http.get({ host: '127.0.0.1', port: server.address().port,
-        path: '/api/v1/reviews' + query, headers: { connection: 'close' } }, res => {
+      const req = http.request({ host: '127.0.0.1', port: server.address().port,
+        path: '/api/v1/reviews' + query, method: body === undefined ? 'GET' : 'POST',
+        headers: { connection: 'close', 'content-type': 'application/json' } }, res => {
         let body = ''; res.setEncoding('utf8');
         res.on('data', chunk => { body += chunk; });
         res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(body) }));
       });
+      req.end(body === undefined ? undefined : JSON.stringify(body));
       req.on('error', reject); req.setTimeout(3000, () => req.destroy(new Error('HTTP fixture timed out')));
     });
   }
@@ -66,4 +72,31 @@ describe('review-list limit validation', () => {
     assert.equal(r.status, 200); assert.equal(r.body.total, 100); assert.equal(r.body.count, 1);
     assert.deepEqual(r.body.reviews, [{ reviewId: '0' }]);
   });
+  for (const diff of [123, true, false, 0, null, {}, [], ['text'], { value: 'text' }, '', '  \n\t']) {
+    it(`rejects invalid submission diff ${JSON.stringify(diff)} without storage or publication`, async () => {
+      const r = await request('', { diff });
+      assert.equal(r.status, 400);
+      assert.match(r.body.hint, /git diff string/);
+      assert.deepEqual(calls, []);
+    });
+  }
+  it('rejects a missing submission diff without side effects', async () => {
+    assert.equal((await request('', {})).status, 400);
+    assert.deepEqual(calls, []);
+  });
+  for (const diff of ['diff --git a/file b/file\n+text\n', '  \n+é 🧪\n  ']) {
+    it(`queues valid diff bytes unchanged: ${JSON.stringify(diff)}`, async () => {
+      const r = await request('', { diff, repo: 'fixture/repo', branch: 'feature' });
+      assert.equal(r.status, 202);
+      assert.equal(r.body.status, 'queued');
+      const stored = JSON.parse(calls.find(c => c[0] === 'set')[2]);
+      const published = calls.find(c => c[0] === 'publish')[1];
+      assert.equal(stored.diff, diff);
+      assert.equal(stored.reviewId, r.body.reviewId);
+      assert.equal(stored.repo, 'fixture/repo');
+      assert.deepEqual(published, stored);
+      assert.deepEqual(calls.map(c => c[0]), ['set', 'lPush', 'lTrim', 'publish']);
+    });
+  }
+
 });

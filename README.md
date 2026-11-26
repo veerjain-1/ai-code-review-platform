@@ -125,3 +125,10 @@ above 100 are capped at 100. Leading zeroes are accepted.
 Empty, zero, negative, fractional, non-numeric, unsafe, repeated, and structured
 limits return HTTP 400 before stored reviews are read. For example,
 `?limit=-1`, `?limit=2abc`, and `?limit=1&limit=2` are rejected.
+
+### Review submission API
+
+`POST /api/v1/reviews` requires `diff` to be a non-empty string. Missing,
+whitespace-only, numeric, boolean, array, or object values return HTTP 400 before
+anything is stored or queued. Valid diff strings retain their original whitespace
+and Unicode content when stored and published for review.
